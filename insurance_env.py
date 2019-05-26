@@ -29,10 +29,10 @@ class InsuranceEnv(gym.Env):
         ...
         """
         self.action_switcher = {
-            0: (self.safe_mu, self.safe_sigma, False),
-            1: (self.risky_mu, self.risky_sigma, False),
-            2: (self.safe_mu, self.safe_sigma, True),
-            3: (self.risky_mu, self.risky_sigma, True)
+            0: (self.safe_mu, self.safe_sigma, 0.),
+            1: (self.risky_mu, self.risky_sigma, 0.),
+            2: (self.safe_mu, self.safe_sigma, 1.),
+            3: (self.risky_mu, self.risky_sigma, 1.)
         }
 
         self.observation_space = spaces.Dict({
@@ -43,19 +43,15 @@ class InsuranceEnv(gym.Env):
 
         self.reset()
 
-    def step(self, agent_action: int, insurance_action: float):
-        assert 0 <= insurance_action <= 1, "insurance cost must be between 0 and 1"
-
-        mu, sigma, insured = self.action_switcher.get(agent_action, (0, 0, False))
+    def step(self, agent_action: int):
+        mu, sigma, insured = self.action_switcher.get(agent_action, (0, 0, 0.0))
 
         agent_reward = np.random.normal(mu, sigma)
         insurer_reward = 0.0
-        if insured:
+        if insured == 1.:
             if agent_reward < self.insurance_return:
                 insurer_reward = agent_reward - self.insurance_return + self.insurance_cost
                 agent_reward = self.insurance_return - self.insurance_cost
-
-        self.set_insurance_cost(insurance_action)
 
         self.num_trials -= 1
 
@@ -68,7 +64,7 @@ class InsuranceEnv(gym.Env):
 
         observation = self.get_obs()
 
-        return observation, agent_reward, insurer_reward, done
+        return observation, (insurer_reward, agent_reward), done, None
 
         """Get action from insurance"""
 
@@ -81,17 +77,27 @@ class InsuranceEnv(gym.Env):
         """Train insurance and agent"""
 
     def get_obs(self):
-        return {
-            'was insured': np.array(self.was_insured, dtype=int),
-            'insurance_costs': np.array(self.insurance_costs, dtype=np.float32),
-            'new_cost': np.array(self.current_cost, dtype=np.float32)
-        }
+        # return {
+        #     'was insured': np.array(self.was_insured, dtype=int),
+        #     'insurance_costs': np.array(self.insurance_costs, dtype=np.float32),
+        #     'new_cost': np.array(self.current_cost, dtype=np.float32)
+        # }
+        # obs = np.append(self.was_insured, self.insurance_costs.append(self.current_cost))
+        obs = np.zeros(21, dtype=np.float32)
+        obs[:10] = self.was_insured
+        obs[10:20] = self.insurance_costs
+        obs[20] = self.current_cost
+        print(obs)
+
+        return obs
 
     def reset(self):
-        self.was_insured = [False for _ in range(LEN_LOOKBACK)]
+        self.was_insured = [0.0 for _ in range(LEN_LOOKBACK)]
         self.insurance_costs = [0.0 for _ in range(LEN_LOOKBACK)]
         self.set_insurance_cost()
         self.num_trials = LEN_EPISODE
+
+        return [self.get_obs(), self.get_obs()]
 
     def set_insurance_cost(self, insurance_cost: float = 0.0):
         assert insurance_cost >= 0.0, "insurance cost must be positive or zero"
