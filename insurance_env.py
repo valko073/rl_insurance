@@ -46,25 +46,27 @@ class InsuranceEnv(gym.Env):
     def step(self, agent_action: int):
         mu, sigma, insured = self.action_switcher.get(agent_action, (0, 0, 0.0))
 
+        self.action_counter[agent_action] += 1
+
         agent_reward = np.random.normal(mu, sigma)
         insurer_reward = 0.0
         if insured == 1.:
             if agent_reward < self.insurance_return:
-                insurer_reward = agent_reward - self.insurance_return + self.insurance_cost
-                agent_reward = self.insurance_return - self.insurance_cost
+                insurer_reward = agent_reward - self.insurance_return + self.current_cost
+                agent_reward = self.insurance_return - self.current_cost
 
         self.num_trials -= 1
 
         done = self.num_trials == 0
 
-        self.was_insured.pop()
+        self.was_insured.pop(0)
         self.was_insured.append(insured)
-        self.insurance_costs.pop()
+        self.insurance_costs.pop(0)
         self.insurance_costs.append(self.get_insurance_cost())
 
         observation = self.get_obs()
 
-        return observation, (insurer_reward, agent_reward), done, None
+        return (observation, observation), (insurer_reward, agent_reward), done, None
 
         """Get action from insurance"""
 
@@ -87,7 +89,6 @@ class InsuranceEnv(gym.Env):
         obs[:10] = self.was_insured
         obs[10:20] = self.insurance_costs
         obs[20] = self.current_cost
-        print(obs)
 
         return obs
 
@@ -97,10 +98,12 @@ class InsuranceEnv(gym.Env):
         self.set_insurance_cost()
         self.num_trials = LEN_EPISODE
 
+        self.action_counter = [0, 0, 0, 0]
+
         return [self.get_obs(), self.get_obs()]
 
     def set_insurance_cost(self, insurance_cost: float = 0.0):
-        assert insurance_cost >= 0.0, "insurance cost must be positive or zero"
+        # assert insurance_cost >= 0.0, "insurance cost must be positive or zero"
         self.current_cost = insurance_cost
 
     def get_insurance_cost(self):

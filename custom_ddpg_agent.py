@@ -14,8 +14,6 @@ class CustomDDPGAgent(DDPGAgent):
 
     def select_action(self, state):
 
-        print(state)
-        print(type(state))
 
 
 
@@ -27,8 +25,6 @@ class CustomDDPGAgent(DDPGAgent):
         # batch = np.array([np.array([s]) for s in list(state[0].values())])
         batch = state[0].reshape(1,1,21)
 
-        print(batch)
-        print(type(batch))
 
         action = self.actor.predict_on_batch(batch).flatten()
         assert action.shape == (self.nb_actions,)

@@ -2,6 +2,9 @@ import numpy as np
 import gym
 from copy import deepcopy
 from logging import getLogger
+import argparse
+from comet_ml import Experiment
+import datetime
 
 from keras.models import Sequential, Model
 from keras.layers import Dense, Activation, Flatten, Input, Concatenate
@@ -24,9 +27,8 @@ NUM_HIDDEN_UNITS = 32
 logger = getLogger()
 
 
-
-
 def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=None, log_dir=None):
+    print('NUM_AGENTS:', len(agents))
     for agent in agents:
         if not agent.compiled:
             raise RuntimeError(
@@ -46,6 +48,7 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
     did_abort = False
     try:
         while agents[0].step < nb_steps:
+            insurance_costs = []
             if observations[0] is None:  # start of a new episode
                 observations = deepcopy(env.reset())
                 for i, agent in enumerate(agents):
@@ -66,7 +69,7 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
                 # Run a single step.
                 # This is were all of the work happens. We first perceive and compute the action
                 # (forward step) and then use the reward to improve (backward step).
-                print("i: ",i,observations[i])
+                # print("i: ", i, observations[i])
                 actions.append(agent.forward(observations[i]))
                 if agent.processor is not None:
                     actions[i] = agent.processor.process_action(actions[i])
@@ -77,12 +80,13 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
             env.step_i = agents[0].step
 
             env.set_insurance_cost(actions[0])
+            insurance_costs.append(actions[0])
 
             observations, r, done, info = env.step(actions[1])
-            print(observations)
+            # print('observations:', observations)
+            # print('num of observations:', len(observations))
 
             observations = deepcopy(observations)
-            print(observations)
 
             for i, agent in enumerate(agents):
                 if agent.processor is not None:
@@ -98,15 +102,39 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
                 episode_steps[i] += 1
                 agent.step += 1
 
+            if args.comet:
+                experiment.log_metric("insurance_cost", actions[0][0])
+
             if done:
+                if args.comet:
+                    experiment.log_metrics({"num_safe_non_insured": env.action_counter[0],
+                                            "num_risky_non_insured": env.action_counter[1],
+                                            "num_safe_insured": env.action_counter[2],
+                                            "num_risky_insured": env.action_counter[3],
+                                            "avg_insurance_cost": np.mean(insurance_costs),
+                                            "num_safe": env.action_counter[0]+env.action_counter[2],
+                                            "num_risky": env.action_counter[1]+env.action_counter[3],
+                                            "num_insured": env.action_counter[2]+env.action_counter[3],
+                                            "num_non_insured": env.action_counter[0]+env.action_counter[1]
+                                            })
+
+                    experiment.set_step(env.step_i)
+
                 for i, agent in enumerate(agents):
                     agent.forward(observations[i])
                     agent.backward(0., terminal=False)
 
-                logger.write_log('episode_return', np.sum(episode_rewards), episode)
-                logger.write_log('bargaining_succes', info['bargaining_succes'], episode)
+                # logger.info('episode_return', np.sum(episode_rewards), episode)
+                # logger.info('bargaining_succes', info['bargaining_succes'], episode)
+                print('episode_return', np.sum(episode_rewards), episode)
                 for i, agent in enumerate(agents):
-                    logger.write_log('episode_return_agent-{}'.format(i), r[i], episode)
+                    logger.info('episode_return_agent-{}'.format(i), r[i], episode)
+                    print('episode_return_agent-{}'.format(i), r[i], episode)
+                    if i == 0:
+                        model_type = "insurance"
+                    else:
+                        model_type = "agent"
+                    experiment.log_metric("reward_"+model_type, np.sum(episode_rewards[i]))
                 # for key, value in info.items():
                 #    logger.write_log(key, value, agents[0].step)
 
@@ -115,24 +143,35 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
                 episode_rewards = [None for _ in agents]
                 episode += 1
 
-                print("DONE")
 
-            print("step: ",env.step_i)
+
+            # print("step: ", env.step_i)
 
     except KeyboardInterrupt:
         # We catch keyboard interrupts here so that training can be be safely aborted.
         # This is so common that we've built this right into this function, which ensures that
         # the `on_train_end` method is properly called.
         did_abort = True
-    for i, agent in enumerate(agents):
-        agent._on_train_end()
+        for i, agent in enumerate(agents):
+            if i == 0:
+                model_type = "insurance"
+            else:
+                model_type = "agent"
+            filename = '/models/'+model_type+'-%s.txt' % datetime.now().strftime('%Y-%m-%d')
+            agent.save_weights(filename)
+            agent._on_train_end()
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--comet", action="store_true")
+
+    args = parser.parse_args()
+
     env = InsuranceEnv()
     agents = []
 
-    print(env.observation_space.shape)
+    # print(env.observation_space.shape)
 
     agent_model = Sequential()
     agent_model.add(Flatten(input_shape=(1,) + (21,)))
@@ -144,7 +183,7 @@ if __name__ == '__main__':
     agent_model.add(Activation('relu'))
     agent_model.add(Dense(env.action_space.n))
     agent_model.add(Activation('linear'))
-    print(agent_model.summary())
+    # print(agent_model.summary())
 
     ins_actor = Sequential()
     ins_actor.add(Flatten(input_shape=(1,) + (21,)))
@@ -155,8 +194,8 @@ if __name__ == '__main__':
     ins_actor.add(Dense(NUM_HIDDEN_UNITS))
     ins_actor.add(Activation('relu'))
     ins_actor.add(Dense(1))
-    ins_actor.add(Activation('sigmoid'))
-    print(ins_actor.summary())
+    ins_actor.add(Activation('hard_sigmoid'))
+    # print(ins_actor.summary())
 
     action_input = Input(shape=(1,), name='action_input')
     observation_input = Input(shape=(1,) + (21,), name='observation_input')
@@ -169,9 +208,9 @@ if __name__ == '__main__':
     x = Dense(NUM_HIDDEN_UNITS)(x)
     x = Activation('relu')(x)
     x = Dense(1)(x)
-    x = Activation('sigmoid')(x)
+    x = Activation('hard_sigmoid')(x)
     ins_critic = Model(inputs=[action_input, observation_input], outputs=x)
-    print(ins_critic.summary(()))
+    # print(ins_critic.summary(()))
 
     ag_memory = SequentialMemory(limit=10000, window_length=1)
     ag_policy = BoltzmannQPolicy()
@@ -190,4 +229,10 @@ if __name__ == '__main__':
     agents.append(ins_agent)
     agents.append(ag_dqn)
 
-    fit_n_agents(env=env, nb_steps=100, agents=agents, nb_max_episode_steps=100, logger=logger)
+    if args.comet:
+        experiment = Experiment(api_key="3mSdp5B8b6iASE7m36JLuMEmd",
+            project_name='rl_insurance_first_try', workspace="valko073")
+        # experiment.log_parameters({'learning_rate':self.learning_rate})
+
+    fit_n_agents(env=env, nb_steps=100000, agents=agents, nb_max_episode_steps=1000, logger=logger)
+    print('done')
