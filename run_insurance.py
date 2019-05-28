@@ -18,6 +18,7 @@ from rl.policy import BoltzmannQPolicy
 from rl.processors import MultiInputProcessor
 
 from insurance_env import InsuranceEnv
+from config import EnvConfig
 
 from custom_ddpg_agent import CustomDDPGAgent
 
@@ -25,6 +26,7 @@ from custom_ddpg_agent import CustomDDPGAgent
 np.random.seed(123)
 NUM_HIDDEN_UNITS = 32
 logger = getLogger()
+comet_cfg = EnvConfig()
 
 
 def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=None, log_dir=None):
@@ -79,8 +81,8 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
 
             env.step_i = agents[0].step
 
-            env.set_insurance_cost(actions[0])
-            insurance_costs.append(actions[0])
+            env.set_insurance_cost(actions[0][0])
+            insurance_costs.append(actions[0][0])
 
             observations, r, done, info = env.step(actions[1])
             # print('observations:', observations)
@@ -230,9 +232,8 @@ if __name__ == '__main__':
     agents.append(ag_dqn)
 
     if args.comet:
-        experiment = Experiment(api_key="3mSdp5B8b6iASE7m36JLuMEmd",
-            project_name='rl_insurance_first_try', workspace="valko073")
-        # experiment.log_parameters({'learning_rate':self.learning_rate})
+        experiment = Experiment(api_key=comet_cfg.comet_api_key,
+                                project_name=comet_cfg.comet_project_name, workspace=comet_cfg.comet_workspace)
 
     fit_n_agents(env=env, nb_steps=100000, agents=agents, nb_max_episode_steps=1000, logger=logger)
     print('done')
