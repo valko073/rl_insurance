@@ -4,7 +4,8 @@ from copy import deepcopy
 from logging import getLogger
 import argparse
 from comet_ml import Experiment
-import datetime
+from datetime import datetime
+import pickle
 
 from keras.models import Sequential, Model
 from keras.layers import Dense, Activation, Flatten, Input, Concatenate
@@ -45,9 +46,12 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
     episode_rewards = [None for _ in agents]
     episode_steps = [None for _ in agents]
 
+
     for agent in agents:
         agent.step = 0
     did_abort = False
+
+    to_log = []
     try:
         while agents[0].step < nb_steps:
             insurance_costs = []
@@ -104,6 +108,8 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
                 episode_steps[i] += 1
                 agent.step += 1
 
+            to_log.append([observations[0], actions, r])
+
             if args.comet:
                 experiment.log_metric("insurance_cost", actions[0][0])
 
@@ -149,17 +155,20 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
 
             # print("step: ", env.step_i)
 
-    except KeyboardInterrupt:
+    # except KeyboardInterrupt:
+    finally:
         # We catch keyboard interrupts here so that training can be be safely aborted.
         # This is so common that we've built this right into this function, which ensures that
         # the `on_train_end` method is properly called.
         did_abort = True
+        with open('logs/outfile-%s.p' % datetime.now().strftime('%Y-%m-%d'), 'wb') as fp:
+            pickle.dump(to_log, fp)
         for i, agent in enumerate(agents):
             if i == 0:
                 model_type = "insurance"
             else:
                 model_type = "agent"
-            filename = '/models/'+model_type+'-%s.txt' % datetime.now().strftime('%Y-%m-%d')
+            filename = 'models/'+model_type+'-%s.h5' % datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
             agent.save_weights(filename)
             agent._on_train_end()
 
@@ -167,6 +176,7 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--comet", action="store_true")
+    parser.add_argument("--num_steps", type=int, default=1000)
 
     args = parser.parse_args()
 
@@ -196,7 +206,7 @@ if __name__ == '__main__':
     ins_actor.add(Dense(NUM_HIDDEN_UNITS))
     ins_actor.add(Activation('relu'))
     ins_actor.add(Dense(1))
-    ins_actor.add(Activation('hard_sigmoid'))
+    ins_actor.add(Activation('linear'))
     # print(ins_actor.summary())
 
     action_input = Input(shape=(1,), name='action_input')
@@ -210,7 +220,7 @@ if __name__ == '__main__':
     x = Dense(NUM_HIDDEN_UNITS)(x)
     x = Activation('relu')(x)
     x = Dense(1)(x)
-    x = Activation('hard_sigmoid')(x)
+    x = Activation('linear')(x)
     ins_critic = Model(inputs=[action_input, observation_input], outputs=x)
     # print(ins_critic.summary(()))
 
@@ -235,5 +245,5 @@ if __name__ == '__main__':
         experiment = Experiment(api_key=comet_cfg.comet_api_key,
                                 project_name=comet_cfg.comet_project_name, workspace=comet_cfg.comet_workspace)
 
-    fit_n_agents(env=env, nb_steps=100000, agents=agents, nb_max_episode_steps=1000, logger=logger)
+    fit_n_agents(env=env, nb_steps=args.num_steps, agents=agents, nb_max_episode_steps=1000, logger=logger)
     print('done')
