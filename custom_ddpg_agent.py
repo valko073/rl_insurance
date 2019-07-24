@@ -26,7 +26,8 @@ class CustomDDPGAgent(DDPGAgent):
         batch = state[0].reshape(1,1,21)
 
 
-        action = self.actor.predict_on_batch(batch).flatten()
+        # action = self.actor.predict_on_batch(batch).flatten()
+        action = self.actor.predict(batch, verbose=0).flatten()
         assert action.shape == (self.nb_actions,)
 
         # Apply noise, if a random process is set.
@@ -34,5 +35,8 @@ class CustomDDPGAgent(DDPGAgent):
             noise = self.random_process.sample()
             assert noise.shape == action.shape
             action += noise
+
+        # print(self.actor.summary())
+        #print(action)
 
         return action

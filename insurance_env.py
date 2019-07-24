@@ -3,7 +3,7 @@ from gym import spaces
 import numpy as np
 
 LEN_LOOKBACK = 10
-LEN_EPISODE = 50
+LEN_EPISODE = 500
 NUM_INSURANCES = 1
 NUM_AGENTS = 1
 
@@ -49,11 +49,21 @@ class InsuranceEnv(gym.Env):
         self.action_counter[agent_action] += 1
 
         agent_reward = np.random.normal(mu, sigma)
-        insurer_reward = 0.0
+        insurer_reward = -.01
         if insured == 1.:
             if agent_reward < self.insurance_return:
+                # print("agent reward:", agent_reward)
+                # print("agent action:", agent_action)
+                # print("insurance_return:", self.insurance_return)
+                # print("current cost:", self.current_cost)
+                # print("insurer reward:", insurer_reward)
+                # print("agent reward:", agent_reward)
+                # print(" ")
                 insurer_reward = agent_reward - self.insurance_return + self.current_cost
                 agent_reward = self.insurance_return - self.current_cost
+            else:
+                agent_reward -= self.current_cost
+                insurer_reward = self.current_cost
 
         self.num_trials -= 1
 
@@ -65,6 +75,9 @@ class InsuranceEnv(gym.Env):
         self.insurance_costs.append(self.get_insurance_cost())
 
         observation = self.get_obs()
+
+        """Try to force insurance to make price competitive"""
+        # insurer_reward -= .01
 
         return (observation, observation), (insurer_reward, agent_reward), done, None
 
