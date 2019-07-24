@@ -4,6 +4,8 @@ from copy import deepcopy
 from logging import getLogger
 import argparse
 from comet_ml import Experiment
+import neptune
+
 from datetime import datetime
 import pickle
 
@@ -113,6 +115,7 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
 
             if args.comet:
                 experiment.log_metric("insurance_cost", actions[0][0])
+                neptune.send_metric('insurance_cost', actions[0][0])
 
             if done:
                 if args.comet:
@@ -126,6 +129,16 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
                                             "num_insured": env.action_counter[2]+env.action_counter[3],
                                             "num_non_insured": env.action_counter[0]+env.action_counter[1]
                                             })
+
+                    neptune.send_metric("num_safe_non_insured", env.action_counter[0])
+                    neptune.send_metric("num_risky_non_insured", env.action_counter[1])
+                    neptune.send_metric("num_safe_insured", env.action_counter[2])
+                    neptune.send_metric("num_risky_insured", env.action_counter[3])
+                    neptune.send_metric("avg_insurance_cost", np.mean(insurance_costs))
+                    neptune.send_metric("num_safe", env.action_counter[0]+env.action_counter[2])
+                    neptune.send_metric("num_risky", env.action_counter[1]+env.action_counter[3])
+                    neptune.send_metric("num_insured", env.action_counter[2]+env.action_counter[3])
+                    neptune.send_metric("num_non_insured", env.action_counter[0]+env.action_counter[1])
 
                     experiment.set_step(env.step_i)
 
@@ -145,6 +158,7 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
                         model_type = "agent"
                     if args.comet:
                         experiment.log_metric("reward_"+model_type, np.sum(episode_rewards[i]))
+                        neptune.send_metric("reward_"+model_type, np.sum(episode_rewards[i]))
                 # for key, value in info.items():
                 #    logger.write_log(key, value, agents[0].step)
 
@@ -250,6 +264,11 @@ if __name__ == '__main__':
     if args.comet:
         experiment = Experiment(api_key=comet_cfg.comet_api_key,
                                 project_name=comet_cfg.comet_project_name, workspace=comet_cfg.comet_workspace)
+        # neptune.set_project(comet_cfg.neptune_project_name)
+        neptune.init(api_token=comet_cfg.neptune_token, project_qualified_name=comet_cfg.neptune_project_name)
+        neptune.create_experiment()
 
     fit_n_agents(env=env, nb_steps=args.num_steps, agents=agents, nb_max_episode_steps=1000, logger=logger)
     print('done')
+    if args.comet:
+        neptune.stop()
