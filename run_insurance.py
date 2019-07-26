@@ -9,31 +9,21 @@ import neptune
 from datetime import datetime
 import pickle
 
-from keras.models import Sequential, Model
-from keras.layers import Dense, Activation, Flatten, Input, Concatenate
-from keras.optimizers import Adam
-
-from rl.agents.dqn import DQNAgent
-from rl.agents.ddpg import DDPGAgent
-from rl.memory import SequentialMemory
-from rl.random import OrnsteinUhlenbeckProcess
-from rl.policy import BoltzmannQPolicy, LinearAnnealedPolicy, EpsGreedyQPolicy
-from rl.processors import MultiInputProcessor
+from util import generate_agent_model, generate_insurance_model
 
 from insurance_env import InsuranceEnv
 from config import EnvConfig
 
-from custom_ddpg_agent import CustomDDPGAgent
-from custom_dqn_agent import CustomDQNAgent
+
 
 
 np.random.seed(123)
-NUM_HIDDEN_UNITS = 32
+
 logger = getLogger()
 comet_cfg = EnvConfig()
 
 
-def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=None, log_dir=None):
+def fit_n_agents(env, nb_steps, agents=None, insurances=None, nb_max_episode_steps=None, logger=None, log_dir=None):
     print('NUM_AGENTS:', len(agents))
     for agent in agents:
         if not agent.compiled:
@@ -49,9 +39,10 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
     episode_rewards = [None for _ in agents]
     episode_steps = [None for _ in agents]
 
-
     for agent in agents:
         agent.step = 0
+    for insurance in insurances:
+        insurance.step = 0
     did_abort = False
 
     to_log = []
@@ -88,7 +79,7 @@ def fit_n_agents(env, nb_steps, agents=None, nb_max_episode_steps=None, logger=N
 
             env.step_i = agents[0].step
 
-            env.set_insurance_cost(actions[0][0])
+            env.set_insurance_costs(actions[0][0])
             insurance_costs.append(actions[0][0])
 
             observations, r, done, info = env.step(actions[1])
@@ -193,82 +184,28 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--comet", action="store_true")
     parser.add_argument("--num_steps", type=int, default=1000)
+    parser.add_argument("--num_agents", type=int, default=1)
+    parser.add_argument("--num_insurances", type=int, default=1)
 
     args = parser.parse_args()
 
     env = InsuranceEnv()
     agents = []
 
-    # print(env.observation_space.shape)
-
-    agent_model = Sequential()
-    agent_model.add(Flatten(input_shape=(1,) + (21,)))
-    agent_model.add(Dense(NUM_HIDDEN_UNITS))
-    agent_model.add(Activation('relu'))
-    agent_model.add(Dense(NUM_HIDDEN_UNITS))
-    agent_model.add(Activation('relu'))
-    agent_model.add(Dense(NUM_HIDDEN_UNITS))
-    agent_model.add(Activation('relu'))
-    agent_model.add(Dense(env.action_space.n))
-    agent_model.add(Activation('linear'))
-    # print(agent_model.summary())
-
-    ins_actor = Sequential()
-    ins_actor.add(Flatten(input_shape=(1,) + (21,)))
-    ins_actor.add(Dense(NUM_HIDDEN_UNITS))
-    ins_actor.add(Activation('relu'))
-    ins_actor.add(Dense(NUM_HIDDEN_UNITS))
-    ins_actor.add(Activation('relu'))
-    ins_actor.add(Dense(NUM_HIDDEN_UNITS))
-    ins_actor.add(Activation('relu'))
-    ins_actor.add(Dense(1))
-    ins_actor.add(Activation('softsign'))
-    # print(ins_actor.summary())
-    # print(ins_actor.layers[-1].activation)
-
-
-    action_input = Input(shape=(1,), name='action_input')
-    observation_input = Input(shape=(1,) + (21,), name='observation_input')
-    flattened_observation = Flatten()(observation_input)
-    x = Concatenate()([action_input, flattened_observation])
-    x = Dense(NUM_HIDDEN_UNITS)(x)
-    x = Activation('relu')(x)
-    x = Dense(NUM_HIDDEN_UNITS)(x)
-    x = Activation('relu')(x)
-    x = Dense(NUM_HIDDEN_UNITS)(x)
-    x = Activation('relu')(x)
-    x = Dense(1)(x)
-    x = Activation('softsign')(x)
-    ins_critic = Model(inputs=[action_input, observation_input], outputs=x)
-    # print(ins_critic.summary(()))
-
-    ag_memory = SequentialMemory(limit=10000, window_length=1)
-    # ag_policy = BoltzmannQPolicy()
-    ag_policy = LinearAnnealedPolicy(EpsGreedyQPolicy(), attr="eps", value_max=.95, value_min=0, value_test=0, nb_steps=5000)
-    ag_dqn = DQNAgent(model=agent_model, nb_actions=env.action_space.n, memory=ag_memory, nb_steps_warmup=100,
-                            target_model_update=1e-2, policy=ag_policy)
-    ag_dqn.compile(Adam(lr=.001), metrics=['mae'])
-
-    ins_memory = SequentialMemory(limit=10000, window_length=1)
-    # ins_random_process = OrnsteinUhlenbeckProcess(size=1, theta=.15, mu=0, sigma=.3)
-    ins_random_process = None
-    ins_agent = CustomDDPGAgent(nb_actions=1, actor=ins_actor, critic=ins_critic, critic_action_input=action_input,
-                                memory=ins_memory, nb_steps_warmup_critic=100, nb_steps_warmup_actor=100,
-                                random_process=ins_random_process, gamma=.99, target_model_update=1e-3)
-    # ins_agent.processor = MultiInputProcessor(3)
-    ins_agent.compile(Adam(lr=.001, clipnorm=1.), metrics=['mae'])
-
-    agents.append(ins_agent)
-    agents.append(ag_dqn)
+    for i in range(args.num_insurances):
+        agents.append(generate_insurance_model(env))
+    for i in range(args.num_agents):
+        agents.append(generate_agent_model(env))
 
     if args.comet:
         experiment = Experiment(api_key=comet_cfg.comet_api_key,
                                 project_name=comet_cfg.comet_project_name, workspace=comet_cfg.comet_workspace)
-        # neptune.set_project(comet_cfg.neptune_project_name)
+
         neptune.init(api_token=comet_cfg.neptune_token, project_qualified_name=comet_cfg.neptune_project_name)
         neptune.create_experiment()
 
-    fit_n_agents(env=env, nb_steps=args.num_steps, agents=agents, nb_max_episode_steps=1000, logger=logger)
+    fit_n_agents(env=env, nb_steps=args.num_steps, agents=agents, num_agents=args.num_agents,
+                 num_insurances=args.num_insurances, nb_max_episode_steps=1000, logger=logger)
     print('done')
     if args.comet:
         neptune.stop()

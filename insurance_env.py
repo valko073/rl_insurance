@@ -43,38 +43,39 @@ class InsuranceEnv(gym.Env):
 
         self.reset()
 
-    def step(self, agent_action: int):
-        mu, sigma, insured = self.action_switcher.get(agent_action, (0, 0, 0.0))
+    def step(self, agent_actions: list[int]):
+        for agent_action in agent_actions:
+            mu, sigma, insured = self.action_switcher.get(agent_action, (0, 0, 0.0))
 
-        self.action_counter[agent_action] += 1
+            self.action_counter[agent_action] += 1
 
-        agent_reward = np.random.normal(mu, sigma)
-        insurer_reward = -.01
-        if insured == 1.:
-            if agent_reward < self.insurance_return:
-                # print("agent reward:", agent_reward)
-                # print("agent action:", agent_action)
-                # print("insurance_return:", self.insurance_return)
-                # print("current cost:", self.current_cost)
-                # print("insurer reward:", insurer_reward)
-                # print("agent reward:", agent_reward)
-                # print(" ")
-                insurer_reward = agent_reward - self.insurance_return + self.current_cost
-                agent_reward = self.insurance_return - self.current_cost
-            else:
-                agent_reward -= self.current_cost
-                insurer_reward = self.current_cost
+            agent_reward = np.random.normal(mu, sigma)
+            insurer_reward = -.01
+            if insured == 1.:
+                if agent_reward < self.insurance_return:
+                    # print("agent reward:", agent_reward)
+                    # print("agent action:", agent_action)
+                    # print("insurance_return:", self.insurance_return)
+                    # print("current cost:", self.current_cost)
+                    # print("insurer reward:", insurer_reward)
+                    # print("agent reward:", agent_reward)
+                    # print(" ")
+                    insurer_reward = agent_reward - self.insurance_return + self.current_cost
+                    agent_reward = self.insurance_return - self.current_cost
+                else:
+                    agent_reward -= self.current_cost
+                    insurer_reward = self.current_cost
 
-        self.num_trials -= 1
+            self.num_trials -= 1
 
-        done = self.num_trials == 0
+            done = self.num_trials == 0
 
-        self.was_insured.pop(0)
-        self.was_insured.append(insured)
-        self.insurance_costs.pop(0)
-        self.insurance_costs.append(self.get_insurance_cost())
+            self.was_insured.pop(0)
+            self.was_insured.append(insured)
+            self.insurance_costs.pop(0)
+            self.insurance_costs.append(self.get_insurance_cost())
 
-        observation = self.get_obs()
+            observation = self.get_obs()
 
         """Try to force insurance to make price competitive"""
         # insurer_reward -= .01
