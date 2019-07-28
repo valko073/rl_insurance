@@ -1,3 +1,7 @@
+import os
+# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+import tensorflow as tf
+# sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
 import numpy as np
 import gym
 from copy import deepcopy
@@ -23,7 +27,7 @@ logger = getLogger()
 comet_cfg = EnvConfig()
 
 
-def fit_n_agents(env, nb_steps, agents=None, insurances=None, nb_max_episode_steps=None, logger=None, log_dir=None):
+def fit_n_agents(env, nb_steps, agents=None, num_agents=1,  num_insurances=1, nb_max_episode_steps=None, logger=None, log_dir=None):
     print('NUM_AGENTS:', len(agents))
     for agent in agents:
         if not agent.compiled:
@@ -41,16 +45,15 @@ def fit_n_agents(env, nb_steps, agents=None, insurances=None, nb_max_episode_ste
 
     for agent in agents:
         agent.step = 0
-    for insurance in insurances:
-        insurance.step = 0
     did_abort = False
 
     to_log = []
     try:
         while agents[0].step < nb_steps:
-            insurance_costs = []
+            insurance_costs = [[] for _ in range(num_insurances)]
             if observations[0] is None:  # start of a new episode
                 observations = deepcopy(env.reset())
+
                 for i, agent in enumerate(agents):
                     episode_steps[i] = 0
                     episode_rewards[i] = 0.
@@ -69,7 +72,6 @@ def fit_n_agents(env, nb_steps, agents=None, insurances=None, nb_max_episode_ste
                 # Run a single step.
                 # This is were all of the work happens. We first perceive and compute the action
                 # (forward step) and then use the reward to improve (backward step).
-                # print("i: ", i, observations[i])
                 actions.append(agent.forward(observations[i]))
                 if agent.processor is not None:
                     actions[i] = agent.processor.process_action(actions[i])
@@ -79,12 +81,11 @@ def fit_n_agents(env, nb_steps, agents=None, insurances=None, nb_max_episode_ste
 
             env.step_i = agents[0].step
 
-            env.set_insurance_costs(actions[0][0])
-            insurance_costs.append(actions[0][0])
+            for i in range(num_insurances):
+                env.set_insurance_cost(actions[i][0],i)
+                insurance_costs[i].append(actions[i][0])
 
-            observations, r, done, info = env.step(actions[1])
-            # print('observations:', observations)
-            # print('num of observations:', len(observations))
+            observations, r, done, info = env.step(actions[num_insurances:])
 
             observations = deepcopy(observations)
 
@@ -105,8 +106,9 @@ def fit_n_agents(env, nb_steps, agents=None, insurances=None, nb_max_episode_ste
             to_log.append([observations[0], actions, r])
 
             if args.comet:
-                experiment.log_metric("insurance_cost", actions[0][0])
-                neptune.send_metric('insurance_cost', actions[0][0])
+                for i in range(num_insurances):
+                    experiment.log_metric("insurance_cost_"+str(i), actions[i][0])
+                    neptune.send_metric('insurance_cost_'+str(i), actions[i][0])
 
             if done:
                 if args.comet:
@@ -120,16 +122,36 @@ def fit_n_agents(env, nb_steps, agents=None, insurances=None, nb_max_episode_ste
                                             "num_insured": env.action_counter[2]+env.action_counter[3],
                                             "num_non_insured": env.action_counter[0]+env.action_counter[1]
                                             })
+                    nums_safe = 0
+                    nums_risky = 0
+                    nums_insured = 0
+                    nums_non_insured = 0
+                    for i in range(len(env.action_counter)):
+                        action_count = env.action_counter[i]
+                        if i<2:
+                            nums_non_insured += action_count
+                            if i%2==0:
+                                nums_safe += action_count
+                                neptune.send_metric("num_safe_non_insured", action_count)
+                            else:
+                                nums_risky += action_count
+                                neptune.send_metric("num_risky_non_insured", action_count)
+                        else:
+                            nums_insured += action_count
+                            if i%2==0:
+                                nums_safe += action_count
+                            else:
+                                nums_risky += action_count
 
-                    neptune.send_metric("num_safe_non_insured", env.action_counter[0])
-                    neptune.send_metric("num_risky_non_insured", env.action_counter[1])
-                    neptune.send_metric("num_safe_insured", env.action_counter[2])
-                    neptune.send_metric("num_risky_insured", env.action_counter[3])
-                    neptune.send_metric("avg_insurance_cost", np.mean(insurance_costs))
-                    neptune.send_metric("num_safe", env.action_counter[0]+env.action_counter[2])
-                    neptune.send_metric("num_risky", env.action_counter[1]+env.action_counter[3])
-                    neptune.send_metric("num_insured", env.action_counter[2]+env.action_counter[3])
-                    neptune.send_metric("num_non_insured", env.action_counter[0]+env.action_counter[1])
+
+
+                        neptune.send_metric("num_safe_insured", env.action_counter[2])
+                        neptune.send_metric("num_risky_insured", env.action_counter[3])
+                        neptune.send_metric("avg_insurance_cost", np.mean(insurance_costs))
+                        neptune.send_metric("num_safe", env.action_counter[0]+env.action_counter[2])
+                        neptune.send_metric("num_risky", env.action_counter[1]+env.action_counter[3])
+                        neptune.send_metric("num_insured", env.action_counter[2]+env.action_counter[3])
+                        neptune.send_metric("num_non_insured", env.action_counter[0]+env.action_counter[1])
 
                     experiment.set_step(env.step_i)
 
@@ -171,10 +193,10 @@ def fit_n_agents(env, nb_steps, agents=None, insurances=None, nb_max_episode_ste
         with open('logs/outfile-%s.p' % datetime.now().strftime('%Y-%m-%d-%H-%M-%S'), 'wb') as fp:
             pickle.dump(to_log, fp)
         for i, agent in enumerate(agents):
-            if i == 0:
-                model_type = "insurance"
+            if i < num_insurances:
+                model_type = "insurance_"+str(i)
             else:
-                model_type = "agent"
+                model_type = "agent_"+str(i-num_insurances)
             filename = 'models/'+model_type+'-%s.h5' % datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
             agent.save_weights(filename)
             agent._on_train_end()
@@ -189,7 +211,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    env = InsuranceEnv()
+    env = InsuranceEnv(args.num_agents, args.num_insurances)
     agents = []
 
     for i in range(args.num_insurances):

@@ -23,8 +23,8 @@ class CustomDDPGAgent(DDPGAgent):
         # print(batch.shape)
 
         # batch = np.array([np.array([s]) for s in list(state[0].values())])
-        batch = state[0].reshape(1,1,21)
-
+        # batch = state[0].reshape(1,1,21)
+        batch = state[0]
 
         # action = self.actor.predict_on_batch(batch).flatten()
         action = self.actor.predict(batch, verbose=0).flatten()

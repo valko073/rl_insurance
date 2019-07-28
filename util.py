@@ -19,7 +19,7 @@ NUM_HIDDEN_UNITS = 32
 
 def generate_agent_model(env=None):
     agent_model = Sequential()
-    agent_model.add(Flatten(input_shape=(1,) + (21,)))
+    agent_model.add(Flatten(input_shape=(1,) + (env.NUM_INSURANCES,21)))
     agent_model.add(Dense(NUM_HIDDEN_UNITS))
     agent_model.add(Activation('relu'))
     agent_model.add(Dense(NUM_HIDDEN_UNITS))
@@ -45,7 +45,7 @@ def generate_agent_model(env=None):
 
 def generate_insurance_model(env=None):
     ins_actor = Sequential()
-    ins_actor.add(Flatten(input_shape=(1,) + (21,)))
+    ins_actor.add(Flatten(input_shape=(1,) + (env.NUM_INSURANCES,21)))
     ins_actor.add(Dense(NUM_HIDDEN_UNITS))
     ins_actor.add(Activation('relu'))
     ins_actor.add(Dense(NUM_HIDDEN_UNITS))
@@ -58,7 +58,7 @@ def generate_insurance_model(env=None):
     # print(ins_actor.layers[-1].activation)
 
     action_input = Input(shape=(1,), name='action_input')
-    observation_input = Input(shape=(1,) + (21,), name='observation_input')
+    observation_input = Input(shape=(1,) + (env.NUM_INSURANCES,21), name='observation_input')
     flattened_observation = Flatten()(observation_input)
     x = Concatenate()([action_input, flattened_observation])
     x = Dense(NUM_HIDDEN_UNITS)(x)
@@ -75,7 +75,7 @@ def generate_insurance_model(env=None):
     ins_memory = SequentialMemory(limit=10000, window_length=1)
     # ins_random_process = OrnsteinUhlenbeckProcess(size=1, theta=.15, mu=0, sigma=.3)
     ins_random_process = None
-    ins_agent = CustomDDPGAgent(nb_actions=1, actor=ins_actor, critic=ins_critic, critic_action_input=action_input,
+    ins_agent = DDPGAgent(nb_actions=1, actor=ins_actor, critic=ins_critic, critic_action_input=action_input,
                                 memory=ins_memory, nb_steps_warmup_critic=100, nb_steps_warmup_actor=100,
                                 random_process=ins_random_process, gamma=.99, target_model_update=1e-3)
     # ins_agent.processor = MultiInputProcessor(3)
