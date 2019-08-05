@@ -1,6 +1,6 @@
 import os
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-import tensorflow as tf
+#import tensorflow as tf
 # sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
 import numpy as np
 import gym
@@ -14,8 +14,9 @@ from datetime import datetime
 import pickle
 
 from util import generate_agent_model, generate_insurance_model
+import util
 
-from insurance_env import InsuranceEnv
+from insurance_env import InsuranceEnv, LEN_EPISODE
 from config import EnvConfig
 
 
@@ -105,6 +106,7 @@ def fit_n_agents(env, nb_steps, agents=None, num_agents=1,  num_insurances=1, nb
 
             to_log.append([observations[0], actions, r])
 
+
             if args.comet:
                 for i in range(num_insurances):
                     experiment.log_metric("insurance_cost_"+str(i), actions[i][0])
@@ -112,46 +114,51 @@ def fit_n_agents(env, nb_steps, agents=None, num_agents=1,  num_insurances=1, nb
 
             if done:
                 if args.comet:
-                    experiment.log_metrics({"num_safe_non_insured": env.action_counter[0],
-                                            "num_risky_non_insured": env.action_counter[1],
-                                            "num_safe_insured": env.action_counter[2],
-                                            "num_risky_insured": env.action_counter[3],
-                                            "avg_insurance_cost": np.mean(insurance_costs),
-                                            "num_safe": env.action_counter[0]+env.action_counter[2],
-                                            "num_risky": env.action_counter[1]+env.action_counter[3],
-                                            "num_insured": env.action_counter[2]+env.action_counter[3],
-                                            "num_non_insured": env.action_counter[0]+env.action_counter[1]
-                                            })
-                    nums_safe = 0
-                    nums_risky = 0
-                    nums_insured = 0
-                    nums_non_insured = 0
-                    for i in range(len(env.action_counter)):
-                        action_count = env.action_counter[i]
-                        if i<2:
-                            nums_non_insured += action_count
-                            if i%2==0:
-                                nums_safe += action_count
-                                neptune.send_metric("num_safe_non_insured", action_count)
+                    # experiment.log_metrics({"num_safe_non_insured": env.action_counter[0],
+                    #                         "num_risky_non_insured": env.action_counter[1],
+                    #                         "num_safe_insured": env.action_counter[2],
+                    #                         "num_risky_insured": env.action_counter[3],
+                    #                         "avg_insurance_cost": np.mean(insurance_costs),
+                    #                         "num_safe": env.action_counter[0]+env.action_counter[2],
+                    #                         "num_risky": env.action_counter[1]+env.action_counter[3],
+                    #                         "num_insured": env.action_counter[2]+env.action_counter[3],
+                    #                         "num_non_insured": env.action_counter[0]+env.action_counter[1]
+                    #                         })
+
+                    for (agent_id, i), action_count in np.ndenumerate(env.action_counter):
+                        if i < 2:
+                            if i % 2 == 0:
+                                neptune.send_metric("num_safe_non_insured_agent_"+str(agent_id), action_count)
                             else:
-                                nums_risky += action_count
-                                neptune.send_metric("num_risky_non_insured", action_count)
+                                neptune.send_metric("num_risky_non_insured_agent_"+str(agent_id), action_count)
                         else:
-                            nums_insured += action_count
-                            if i%2==0:
-                                nums_safe += action_count
+                            if i % 2 == 0:
+                                if agent_id == 0:
+                                    neptune.send_metric("num_safe_insured_"+str(i//2-1), np.sum(env.action_counter[:, i]))
+                                neptune.send_metric("num_safe_insured_agent_" + str(agent_id) +
+                                                    "_insurance_"+str(i//2-1), action_count)
                             else:
-                                nums_risky += action_count
+                                if agent_id == 0:
+                                    neptune.send_metric("num_risky_insured_"+str(i//2-1), np.sum(env.action_counter[:, i]))
+                                neptune.send_metric("num_risky_insured_agent_"+str(agent_id) +
+                                                    "_insurance_"+str(i//2-1), action_count)
 
+                    neptune.send_metric("avg_insurance_cost", np.mean(insurance_costs))
+                    neptune.send_metric("avg_insurance_cost_scaled", np.mean(insurance_costs)*LEN_EPISODE)
+                    neptune.send_metric("num_safe", np.sum(env.action_counter[:, 0::2]))
+                    neptune.send_metric("num_risky", np.sum(env.action_counter[:, 1::2]))
+                    neptune.send_metric("num_insured", np.sum(env.action_counter[:, 2:]))
+                    neptune.send_metric("num_non_insured", np.sum(env.action_counter[:, :2]))
 
+                    neptune.send_metric("num_safe_non_insured", np.sum(env.action_counter[:, 0]))
+                    neptune.send_metric("num_risky_non_insured", np.sum(env.action_counter[:, 1]))
 
-                        neptune.send_metric("num_safe_insured", env.action_counter[2])
-                        neptune.send_metric("num_risky_insured", env.action_counter[3])
-                        neptune.send_metric("avg_insurance_cost", np.mean(insurance_costs))
-                        neptune.send_metric("num_safe", env.action_counter[0]+env.action_counter[2])
-                        neptune.send_metric("num_risky", env.action_counter[1]+env.action_counter[3])
-                        neptune.send_metric("num_insured", env.action_counter[2]+env.action_counter[3])
-                        neptune.send_metric("num_non_insured", env.action_counter[0]+env.action_counter[1])
+                    for i, v in enumerate(np.mean(insurance_costs, axis=1)):
+                        neptune.send_metric("avg_insurance_cost_"+str(i), v)
+                        neptune.send_metric("avg_insurance_cost_scaled_" + str(i), v*LEN_EPISODE)
+
+                    for i in range(num_insurances):
+                        neptune.send_metric("num_insured_"+str(i), np.sum(env.action_counter[:, i*2+2:i*2+4]))
 
                     experiment.set_step(env.step_i)
 
@@ -165,10 +172,10 @@ def fit_n_agents(env, nb_steps, agents=None, num_agents=1,  num_insurances=1, nb
                 for i, agent in enumerate(agents):
                     logger.info('episode_return_agent-{}'.format(i), r[i], episode)
                     print('episode_return_agent-{}'.format(i), r[i], episode)
-                    if i == 0:
-                        model_type = "insurance"
+                    if i < num_insurances:
+                        model_type = "insurance_"+str(i)
                     else:
-                        model_type = "agent"
+                        model_type = "agent_"+str(i-num_insurances)
                     if args.comet:
                         experiment.log_metric("reward_"+model_type, np.sum(episode_rewards[i]))
                         neptune.send_metric("reward_"+model_type, np.sum(episode_rewards[i]))
@@ -225,6 +232,11 @@ if __name__ == '__main__':
 
         neptune.init(api_token=comet_cfg.neptune_token, project_qualified_name=comet_cfg.neptune_project_name)
         neptune.create_experiment()
+        neptune.set_property('num_insurances', args.num_insurances)
+        neptune.set_property('num_agents', args.num_agents)
+        neptune.set_property('memory_limit', util.MEMORY_LIMIT)
+        neptune.set_property('target_model_update', util.TARGET_MODEL_UPDATE)
+        neptune.set_property('num_steps', args.num_steps)
 
     fit_n_agents(env=env, nb_steps=args.num_steps, agents=agents, num_agents=args.num_agents,
                  num_insurances=args.num_insurances, nb_max_episode_steps=1000, logger=logger)
