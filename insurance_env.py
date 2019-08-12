@@ -15,11 +15,11 @@ class InsuranceEnv(gym.Env):
         self.NUM_AGENTS = num_agents
         self.NUM_INSURANCES = num_insurances
 
-        self.safe_mu = 1
+        self.safe_mu = 0
         self.safe_sigma = 0.1
-        self.risky_mu = 1
+        self.risky_mu = 0
         self.risky_sigma = 1
-        self.insurance_return = 0.5
+        self.insurance_return = 0
 
         self.action_space = spaces.Discrete(2+2*self.NUM_INSURANCES)
         """
