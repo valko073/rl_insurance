@@ -30,9 +30,7 @@ Keras-Applications==1.0.8
 Keras-Preprocessing==1.1.0
 keras-rl==0.4.2
 Markdown==3.1.1
-mkl-fft==1.0.12
-mkl-random==1.0.2
-mkl-service==2.0.2
+pypi
 mock==3.0.5
 monotonic==1.5
 msgpack-python==0.5.6
