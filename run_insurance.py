@@ -21,8 +21,8 @@ from config import EnvConfig
 
 
 
-
-np.random.seed(123)
+seed = np.random()
+np.random.seed(seed)
 
 logger = getLogger()
 comet_cfg = EnvConfig()
@@ -241,6 +241,7 @@ if __name__ == '__main__':
         neptune.set_property('safe_mu', env.safe_mu)
         neptune.set_property('insurance_return', env.insurance_return)
         neptune.set_property('ag_model_eps_final', agents[-1].policy.value_min)
+        neptune.set_property('random_seed', seed)
 
     fit_n_agents(env=env, nb_steps=args.num_steps, agents=agents, num_agents=args.num_agents,
                  num_insurances=args.num_insurances, nb_max_episode_steps=1000, logger=logger)
