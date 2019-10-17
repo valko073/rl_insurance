@@ -12,7 +12,7 @@ target_model_updates = [.09, .5, .9, 10, 100, 500, 1000]
 
 def worker(input):
     (alph, rep_len, tar_mod_up) = input
-    os.system("python run_insurance.py --comet --num_insurances=3 --num_agents=3 --num_steps=100000 "+
+    os.system("python3 run_insurance.py --comet --num_insurances=3 --num_agents=3 --num_steps=100000 "+
               "--learning_rate={} --memory_limit={} --target_model_update={}".format(alph, rep_len, tar_mod_up))
 
 
