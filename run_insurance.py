@@ -2,6 +2,7 @@ import os
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 #import tensorflow as tf
 # sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+import copy
 import numpy as np
 import gym
 from copy import deepcopy
@@ -37,6 +38,7 @@ def fit_n_agents(env, nb_steps, agents=None, num_agents=1,  num_insurances=1, nb
         agent.training = True
         agent._on_train_begin()
 
+
     episode = 0
     observations = [None for _ in agents]
     episode_rewards = [None for _ in agents]
@@ -69,7 +71,7 @@ def fit_n_agents(env, nb_steps, agents=None, num_agents=1,  num_insurances=1, nb
                     assert episode_rewards[i] is not None
                     assert episode_steps[i] is not None
                     assert observations[i] is not None
-
+            last_action_counter = copy.deepcopy(env.action_counter)
             actions = []
             for i, agent in enumerate(agents):
                 # Run a single step.
@@ -110,14 +112,20 @@ def fit_n_agents(env, nb_steps, agents=None, num_agents=1,  num_insurances=1, nb
 
 
             if args.comet:
+                step_action_counter = env.action_counter - last_action_counter
+                if agents[0].step<nb_steps/2:
+                    log_str = '_log_0'
+                else:
+                    log_str = '_log_1'
                 for i in range(num_insurances):
                     #experiment.log_metric("insurance_cost_"+str(i), actions[i][0])
-                    neptune.send_metric('insurance_cost_'+str(i), actions[i][0])
+                    neptune.send_metric('insurance_cost_'+str(i)+log_str, actions[i][0])
+                    neptune.send_metric("step_num_insured_"+str(i)+log_str, np.sum(step_action_counter[:, i*2+2:i*2+4]))
 
             if done:
-                if agents[0].step == nb_steps/2:
-                    for i in range(num_agents):
-                        agents[i+num_insurances].restart_policy()
+                # if agents[0].step == nb_steps/2:
+                #     for i in range(num_agents):
+                #         agents[i+num_insurances].restart_policy()
                 if args.comet:
                     # #experiment.log_metrics({"num_safe_non_insured": env.action_counter[0],
                     #                         "num_risky_non_insured": env.action_counter[1],
@@ -205,6 +213,11 @@ def fit_n_agents(env, nb_steps, agents=None, num_agents=1,  num_insurances=1, nb
         # We catch keyboard interrupts here so that training can be be safely aborted.
         # This is so common that we've built this right into this function, which ensures that
         # the `on_train_end` method is properly called.
+        if args.comet:
+            exp_lyap_r_inter = [lyap_r(x) for x in mean_ins_costs]
+            for i in range(num_insurances):
+                neptune.set_property("lyap_exp_inter_ins_"+str(i), exp_lyap_r_inter[i])
+                neptune.send_metric("lyap_exp_inter_ins_"+str(i), exp_lyap_r_inter[i])
         did_abort = True
         with open('logs/outfile-%s.p' % datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f'), 'wb') as fp:
             pickle.dump(to_log, fp)
@@ -216,11 +229,7 @@ def fit_n_agents(env, nb_steps, agents=None, num_agents=1,  num_insurances=1, nb
             filename = 'models/'+model_type+'-%s.h5' % datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f')
             agent.save_weights(filename)
             agent._on_train_end()
-        if args.comet:
-            exp_lyap_r_inter = [lyap_r(x) for x in mean_ins_costs]
-            for i in range(num_insurances):
-                neptune.set_property("lyap_exp_inter_ins_"+str(i), exp_lyap_r_inter[i])
-                neptune.send_metric("lyap_exp_inter_ins_"+str(i), exp_lyap_r_inter[i])
+
 
 def main(args):
     env = InsuranceEnv(args.num_agents, args.num_insurances)
