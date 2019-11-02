@@ -14,7 +14,7 @@ print(experiments)
 
 params = []
 lyap_inter = []
-lyap_intra = []
+lyap_intra_large = []
 neg_intra = []
 
 for exp in experiments:
@@ -27,6 +27,7 @@ for exp in experiments:
     lyap_inter.append(exp.get_numeric_channels_values('lyap_exp_inter_ins_0','lyap_exp_inter_ins_1','lyap_exp_inter_ins_2').to_numpy()[0][1:])
     lyap_intra = exp.get_numeric_channels_values('lyap_exp_intra_ins_0','lyap_exp_intra_ins_1','lyap_exp_intra_ins_2').to_numpy()[:,1:]
     neg_intra.append(sum(sum(lyap_intra<0))/600)
+    lyap_intra_large.append(lyap_intra)
     # print(lyap)
     params.append([model_update, mem_len, alpha])
 
