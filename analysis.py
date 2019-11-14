@@ -22,8 +22,6 @@ with open('dumps/usages.p', 'rb') as f:
     usages = pickle.load(f)
 with open('dumps/lyap_intra.p', 'rb') as f:
     lyap_intra = pickle.load(f)
-    
-params = np.array(params).astype(np.float)
 
 to_remove = [20,28]
 for i in to_remove:
@@ -33,6 +31,9 @@ for i in to_remove:
     del neg_intra[i]
     del params[i]
     del lyap_intra[i]
+    
+params = np.array(params).astype(np.float)    
+ids = np.array(ids)
 
 correlations = correlations[345:]
 costs = costs[345:]
@@ -58,9 +59,13 @@ lyap_abs_mean = np.mean(np.mean(np.abs(lyap_intra),axis=1),axis=1)
 
 sorted_lyap = (lyap_abs_mean - lyap_intra_min).argsort()
 
-s = np.argsort(lyap_intra_min)[::-1].argsort() # falsch rum, groß gut
-t = np.max(np.abs(correlations),axis=1).argsort()[::-1].argsort() # falsch rum, groß gut
+#s = np.argsort(lyap_intra_min)[::-1].argsort() # falsch rum, groß gut
+#t = np.max(np.abs(correlations),axis=1).argsort()[::-1].argsort() # falsch rum, groß gut
 #u = np.min(np.array(lyap_inter).astype(np.float), axis=1).argsort().argsort()[::-1]
+s = lyap_intra_min / np.max(lyap_intra_min)
+t = np.max(np.abs(correlations),axis=1)
+t = t / np.max(t)
+
 tmp = np.mean(np.array([s,t]),axis=0).argsort()
 
 
@@ -207,19 +212,22 @@ plt.title('3d plot')
 
 
 plt.figure()
-plt.subplot(2,1,1)
+ax1 = plt.subplot(2,1,1)
 sorted_to_plot = np.array(sorted(zipped,key=lambda x:x[0].astype(float)))
-plt.scatter(sorted_to_plot[:,0],sorted_to_plot[:,2].astype(float),c=sorted_to_plot[:,1].astype(float),s=75)
+plt.scatter(sorted_to_plot[:,0],sorted_to_plot[:,2].astype(float),c=sorted_to_plot[:,1].astype(float),s=75,cmap='viridis_r')#,vmax=0.04)
 plt.colorbar().set_label('Learning rate')
-plt.xlabel('target_model_update')
-plt.ylabel('Ranking')
-plt.subplot(2,1,2)
+plt.xlabel('Target Model Update')
+plt.ylabel('Relevance of trajectory dynamics')
+ax1.add_patch(matplotlib.patches.Rectangle((-.5,1.2),7,-0.705,color='grey',alpha=0.15))
+ax2 =plt.subplot(2,1,2)
 sorted_to_plot = np.array(sorted(zipped,key=lambda x:x[1].astype(float)))
-plt.scatter(sorted_to_plot[:,1],sorted_to_plot[:,2].astype(float),c=sorted_to_plot[:,0].astype(float),s=75)
+plt.scatter(sorted_to_plot[:,1],sorted_to_plot[:,2].astype(float),c=sorted_to_plot[:,0].astype(float),s=75,cmap='viridis_r')#,vmax=400)
 plt.xlabel('Learning rate')
 plt.colorbar().set_label('Target model update')
 plt.xticks(sorted_to_plot[:,1],[round(float(x),5) for x in sorted_to_plot[:,1]],rotation='vertical')
-plt.suptitle('Ranking of experiments (low -> interesting dynamics)')
+plt.ylabel('Relevance of trajectory dynamics')
+ax2.add_patch(matplotlib.patches.Rectangle((-2,1.2),30,-0.705,color='grey',alpha=0.15))
+#plt.suptitle('Ranking of experiments (low -> interesting dynamics)')
 
 
 x = np.arange(0,4*np.pi,0.1)   # start,stop,step
@@ -231,3 +239,37 @@ plt.xticks([], [])
 plt.yticks([], [])
 plt.xlabel('Timestep t')
 plt.legend(['Insurance price','Insurance usage'])
+
+
+
+lyap_intra_min = np.mean(np.max(np.abs(np.array(lyap_intra)),axis=1),axis=1)
+lyap_abs_mean = np.mean(np.mean(np.abs(lyap_intra),axis=1),axis=1)
+
+sorted_lyap = (lyap_abs_mean - lyap_intra_min).argsort()
+
+s = np.argsort(lyap_intra_min)[::-1].argsort() # falsch rum, groß gut
+t = np.max(np.abs(correlations),axis=1).argsort()[::-1].argsort() # falsch rum, groß gut
+#u = np.min(np.array(lyap_inter).astype(np.float), axis=1).argsort().argsort()[::-1]
+tmp = np.mean(np.array([s,t]),axis=0).argsort()
+
+
+
+to_plot = np.mean(np.array([s,t]),axis=0)
+
+zipped = list(zip(params[np.where(to_plot>0.505),0].astype(str)[0],params[np.where(to_plot>0.505),2].astype(str)[0],to_plot[np.where(to_plot>0.505)]))
+
+plt.figure()
+plt.subplot(2,1,1)
+sorted_to_plot = np.array(sorted(zipped,key=lambda x:x[0].astype(float)))
+plt.scatter(sorted_to_plot[:,0],sorted_to_plot[:,2].astype(float),c=sorted_to_plot[:,1].astype(float),s=75,cmap='viridis_r')#,vmax=0.01)
+plt.colorbar().set_label('Learning rate')
+plt.xlabel('Target Model Update')
+plt.ylabel('Relevance of trajectory dynamics')
+plt.subplot(2,1,2)
+sorted_to_plot = np.array(sorted(zipped,key=lambda x:x[1].astype(float)))
+plt.scatter(sorted_to_plot[:,1],sorted_to_plot[:,2].astype(float),c=sorted_to_plot[:,0].astype(float),s=75,cmap='viridis_r')#,vmax=400)
+plt.xlabel('Learning rate')
+plt.colorbar().set_label('Target model update')
+plt.xticks(sorted_to_plot[:,1],[round(float(x),5) for x in sorted_to_plot[:,1]],rotation='vertical')
+plt.ylabel('Relevance of trajectory dynamics')
+#plt.suptitle('Ranking of experiments (low -> interesting dynamics)')
